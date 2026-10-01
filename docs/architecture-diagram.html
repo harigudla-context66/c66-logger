@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>c66_logger Data Flow</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;650;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --surface: #ffffff;
+    --surface-2: #edf0f4;
+    --border: #d7dce3;
+    --border-strong: #b7bfc9;
+    --text: #1a1f27;
+    --text-muted: #5c6675;
+    --config-tint: #eef1f5;
+    --config-line: #7f8795;
+    --hot-tint: #fdf1e0;
+    --accent: #b4610a;
+    --accent-strong: #8a4a08;
+    --run: #2f6f8f;
+    --run-strong: #205469;
+    --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: 'Sora', ui-sans-serif, system-ui, sans-serif;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1216; --surface: #171b21; --surface-2: #1e232b; --border: #2b313b;
+      --border-strong: #3a424e; --text: #e7eaee; --text-muted: #97a1ae;
+      --config-tint: #191d24; --config-line: #7b8595; --hot-tint: #2a2013;
+      --accent: #e59a3f; --accent-strong: #f2b467; --run: #6fb3d2; --run-strong: #9cd0e8;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1216; --surface: #171b21; --surface-2: #1e232b; --border: #2b313b;
+    --border-strong: #3a424e; --text: #e7eaee; --text-muted: #97a1ae;
+    --config-tint: #191d24; --config-line: #7b8595; --hot-tint: #2a2013;
+    --accent: #e59a3f; --accent-strong: #f2b467; --run: #6fb3d2; --run-strong: #9cd0e8;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    padding-inline: 20px;
+    padding-block: 28px 48px;
+    max-width: 1180px;
+    margin-inline: auto;
+  }
+  h1 {
+    font-size: clamp(1.4rem, 1.1rem + 1vw, 1.9rem);
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    margin: 0 0 6px;
+    text-wrap: balance;
+  }
+  .version {
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    color: var(--accent-strong);
+    border: 1px solid var(--accent);
+    border-radius: 999px;
+    padding: 1px 8px;
+    vertical-align: middle;
+    margin-left: 6px;
+  }
+  .lede {
+    color: var(--text-muted);
+    font-size: 0.98rem;
+    line-height: 1.55;
+    max-width: 72ch;
+    margin: 0 0 26px;
+  }
+  code {
+    font-family: var(--mono);
+    font-size: 0.88em;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.05em 0.35em;
+  }
+  figure {
+    margin: 0 0 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px 18px 10px;
+  }
+  .scroll { overflow-x: auto; }
+  svg.diagram { display: block; width: 100%; min-width: 760px; height: auto; }
+  figcaption {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    line-height: 1.5;
+    padding: 10px 4px 4px;
+    border-top: 1px solid var(--border);
+    margin-top: 10px;
+  }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+    align-items: center;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    margin: 0 0 30px;
+  }
+  .legend .swatch { display: inline-flex; align-items: center; gap: 7px; }
+  .legend svg { width: 34px; height: 10px; flex: none; }
+  h2 { font-size: 1.02rem; font-weight: 650; margin: 0 0 12px; }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  thead th {
+    background: var(--surface-2);
+    color: var(--text-muted);
+    font-weight: 600;
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.role { color: var(--text-muted); }
+  td:first-child { white-space: nowrap; }
+  @media (max-width: 640px) {
+    body { padding-inline: 16px; }
+    figure { padding: 14px 12px 8px; }
+  }
+</style>
+</head>
+<body>
+<h1>c66_logger data flow <span class="version">v0.4</span></h1>
+<p class="lede">
+  The host package creates the logger with a tenant, an environment and the connection object its
+  connection library returned (Postgres or ClickHouse). Each run is one row in <code>logs.log_run</code>,
+  written synchronously when it starts and again when it ends. Each logged item is one row in
+  <code>logs.log_entry</code>, batched by a background thread. c66-chatbot's existing logging calls arrive
+  through <code>Telemetry</code>, which has the same function signatures. Nothing here looks up credentials.
+</p>
+
+<figure>
+<div class="scroll">
+<svg class="diagram" viewBox="0 0 1360 700" role="img" aria-label="Flow diagram: at init the connection library (c66_clients, get_pg_conn, get_ch_client) returns a connection object, and the host package constructs AuditLogger with tenant_id, environment_id, target_type and that connection, or binds one logger per tenant; the sink registry builds the Postgres, ClickHouse or MongoDB sink, which checks that logs.log_entry and logs.log_run exist. Per run, run() or record_run() writes the log_run row synchronously as Running and again with its final status. On every log call, including c66-chatbot calls through Telemetry, items become one LogEntry each with ids, caller, thread and exception details, are queued in a background writer and written to log_entry in idempotent batches; rows the database rejects are dropped individually, and outages are retried.">
+  <defs>
+    <marker id="arrowNeutral" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--config-line)" />
+    </marker>
+    <marker id="arrowAccent" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)" />
+    </marker>
+    <marker id="arrowRun" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--run)" />
+    </marker>
+    <marker id="arrowText" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--text-muted)" />
+    </marker>
+  </defs>
+
+  <!-- lane bands -->
+  <rect x="0" y="0" width="1360" height="190" rx="12" fill="var(--config-tint)" />
+  <text x="16" y="26" font-family="var(--sans)" font-size="12" font-weight="700" letter-spacing="0.06em" fill="var(--text-muted)">ONCE, AT INIT — THE CALLER SUPPLIES TENANT, ENVIRONMENT AND CONNECTION</text>
+
+  <text x="280" y="252" font-family="var(--sans)" font-size="12" font-weight="700" letter-spacing="0.06em" fill="var(--run-strong)">PER RUN — SYNCHRONOUS</text>
+
+  <rect x="0" y="480" width="1360" height="210" rx="12" fill="var(--hot-tint)" />
+  <text x="16" y="506" font-family="var(--sans)" font-size="12" font-weight="700" letter-spacing="0.06em" fill="var(--accent-strong)">EVERY LOG CALL — THE HOST NEVER WAITS ON THE DATABASE</text>
+
+  <!-- Host package -->
+  <rect x="20" y="300" width="190" height="70" rx="10" fill="var(--surface)" stroke="var(--text-muted)" stroke-width="1.6"/>
+  <text x="115" y="330" text-anchor="middle" font-family="var(--sans)" font-size="14" font-weight="650" fill="var(--text)">Host package</text>
+  <text x="115" y="349" text-anchor="middle" font-family="var(--mono)" font-size="10.5" fill="var(--text-muted)">c66-chatbot (Telemetry)</text>
+
+  <!-- ===== INIT LANE ===== -->
+  <!-- Connection library -->
+  <rect x="20" y="46" width="190" height="84" rx="10" fill="var(--surface)" stroke="var(--text-muted)" stroke-width="1.4" stroke-dasharray="5 3"/>
+  <text x="115" y="72" text-anchor="middle" font-family="var(--sans)" font-size="13.5" font-weight="650" fill="var(--text)">Connection library</text>
+  <text x="115" y="91" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--text-muted)">c66_clients</text>
+  <text x="115" y="105" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--text-muted)">get_pg_conn()</text>
+  <text x="115" y="119" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--text-muted)">get_ch_client()</text>
+  <line x1="210" y1="88" x2="278" y2="88" stroke="var(--config-line)" stroke-width="1.5" marker-end="url(#arrowNeutral)"/>
+  <text x="216" y="80" font-family="var(--mono)" font-size="9.5" fill="var(--config-line)">conn obj</text>
+
+  <rect x="280" y="46" width="250" height="84" rx="10" fill="var(--surface)" stroke="var(--border-strong)" stroke-width="1.5"/>
+  <text x="405" y="72" text-anchor="middle" font-family="var(--sans)" font-size="13.5" font-weight="650" fill="var(--text)">AuditLogger(...)</text>
+  <text x="405" y="91" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--text-muted)">tenant_id, environment_id · bind()</text>
+  <text x="405" y="105" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--text-muted)">"postgres" | "clickhouse"</text>
+  <text x="405" y="119" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--text-muted)">connection=&lt;object&gt; (not closed)</text>
+
+  <rect x="610" y="52" width="210" height="74" rx="10" fill="var(--surface)" stroke="var(--border-strong)" stroke-width="1.5"/>
+  <text x="715" y="81" text-anchor="middle" font-family="var(--sans)" font-size="13.5" font-weight="650" fill="var(--text)">Sink registry</text>
+  <text x="715" y="100" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--text-muted)">postgres · clickhouse · mongodb</text>
+  <text x="715" y="114" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--text-muted)">memory · + register_sink(...)</text>
+
+  <rect x="280" y="144" width="420" height="32" rx="8" fill="var(--surface)" stroke="var(--border)" stroke-width="1.2" stroke-dasharray="3 3"/>
+  <text x="294" y="164" font-family="var(--mono)" font-size="10.5" fill="var(--text-muted)">credentials only via the caller's connection · tables pre-exist</text>
+
+  <line x1="190" y1="300" x2="278" y2="118" stroke="var(--config-line)" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arrowNeutral)"/>
+  <text x="120" y="236" font-family="var(--mono)" font-size="10.5" fill="var(--config-line)">constructs</text>
+  <text x="120" y="250" font-family="var(--mono)" font-size="10.5" fill="var(--config-line)">once</text>
+
+  <line x1="530" y1="89" x2="608" y2="89" stroke="var(--config-line)" stroke-width="1.4" marker-end="url(#arrowNeutral)"/>
+  <text x="534" y="80" font-family="var(--mono)" font-size="10" fill="var(--config-line)">create_sink()</text>
+
+  <line x1="820" y1="112" x2="878" y2="244" stroke="var(--config-line)" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arrowNeutral)"/>
+  <text x="708" y="150" font-family="var(--mono)" font-size="9.5" fill="var(--config-line)">builds sink, open():</text>
+  <text x="708" y="164" font-family="var(--mono)" font-size="9.5" fill="var(--config-line)">connect + check both</text>
+  <text x="708" y="178" font-family="var(--mono)" font-size="9.5" fill="var(--config-line)">tables exist</text>
+
+  <!-- ===== RUN PATH ===== -->
+  <rect x="280" y="262" width="250" height="84" rx="10" fill="var(--surface)" stroke="var(--run)" stroke-width="1.6"/>
+  <text x="405" y="288" text-anchor="middle" font-family="var(--sans)" font-size="13.5" font-weight="650" fill="var(--text)">run() · record_run()</text>
+  <text x="405" y="307" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--text-muted)">start: status=Running</text>
+  <text x="405" y="321" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--text-muted)">end: Completed · Failed · Cancelled</text>
+  <text x="405" y="335" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--text-muted)">sets run_id for entries in the block</text>
+
+  <line x1="210" y1="325" x2="278" y2="310" stroke="var(--run)" stroke-width="2" marker-end="url(#arrowRun)"/>
+
+  <line x1="530" y1="304" x2="884" y2="290" stroke="var(--run)" stroke-width="2" marker-end="url(#arrowRun)"/>
+  <text x="560" y="286" font-family="var(--mono)" font-size="10" fill="var(--run-strong)">write_run(): upsert on run_id</text>
+  <text x="560" y="322" font-family="var(--mono)" font-size="10" fill="var(--run-strong)">at start (before any entry can reference it)</text>
+  <text x="560" y="336" font-family="var(--mono)" font-size="10" fill="var(--run-strong)">and at end (after flushing the run's entries)</text>
+
+  <!-- ===== SINKS (shared) ===== -->
+  <rect x="884" y="226" width="226" height="236" rx="12" fill="none" stroke="var(--border-strong)" stroke-width="1.2"/>
+  <text x="898" y="246" font-family="var(--sans)" font-size="10.5" font-weight="700" letter-spacing="0.06em" fill="var(--text-muted)">SINK · PICKED BY target_type</text>
+
+  <rect x="898" y="258" width="198" height="42" rx="9" fill="var(--surface)" stroke="var(--border-strong)" stroke-width="1.5"/>
+  <text x="997" y="276" text-anchor="middle" font-family="var(--sans)" font-size="13" font-weight="650" fill="var(--text)">PostgresSink</text>
+  <text x="997" y="291" text-anchor="middle" font-family="var(--mono)" font-size="9.5" fill="var(--text-muted)">DB-API · conn, pool or factory</text>
+  <rect x="898" y="306" width="198" height="42" rx="9" fill="var(--surface)" stroke="var(--border-strong)" stroke-width="1.5"/>
+  <text x="997" y="324" text-anchor="middle" font-family="var(--sans)" font-size="13" font-weight="650" fill="var(--text)">ClickHouseSink</text>
+  <text x="997" y="339" text-anchor="middle" font-family="var(--mono)" font-size="9.5" fill="var(--text-muted)">clickhouse_connect / _driver</text>
+  <rect x="898" y="354" width="198" height="42" rx="9" fill="var(--surface)" stroke="var(--border-strong)" stroke-width="1.5"/>
+  <text x="997" y="372" text-anchor="middle" font-family="var(--sans)" font-size="13" font-weight="650" fill="var(--text)">MongoSink</text>
+  <text x="997" y="387" text-anchor="middle" font-family="var(--mono)" font-size="9.5" fill="var(--text-muted)">pymongo · 1 client</text>
+  <rect x="898" y="402" width="198" height="42" rx="9" fill="none" stroke="var(--config-line)" stroke-width="1.3" stroke-dasharray="4 4"/>
+  <text x="997" y="420" text-anchor="middle" font-family="var(--sans)" font-size="13" font-weight="650" fill="var(--text-muted)">S3 / Kafka sink</text>
+  <text x="997" y="435" text-anchor="middle" font-family="var(--mono)" font-size="9.5" fill="var(--text-muted)">planned · register_sink()</text>
+
+  <!-- ===== TARGETS ===== -->
+  <rect x="1168" y="258" width="180" height="42" rx="9" fill="var(--surface-2)" stroke="var(--border-strong)" stroke-width="1.5"/>
+  <rect x="1168" y="258" width="5" height="42" fill="var(--accent)" opacity="0.5"/>
+  <text x="1260" y="276" text-anchor="middle" font-family="var(--sans)" font-size="12.5" font-weight="650" fill="var(--text)">log_run · log_entry</text>
+  <text x="1260" y="291" text-anchor="middle" font-family="var(--mono)" font-size="9.5" fill="var(--text-muted)">Postgres · FKs to app.*</text>
+  <rect x="1168" y="306" width="180" height="42" rx="9" fill="var(--surface-2)" stroke="var(--border-strong)" stroke-width="1.5"/>
+  <rect x="1168" y="306" width="5" height="42" fill="var(--accent)" opacity="0.5"/>
+  <text x="1260" y="324" text-anchor="middle" font-family="var(--sans)" font-size="12.5" font-weight="650" fill="var(--text)">log_run · log_entry</text>
+  <text x="1260" y="339" text-anchor="middle" font-family="var(--mono)" font-size="9.5" fill="var(--text-muted)">ClickHouse · ReplacingMT</text>
+  <rect x="1168" y="354" width="180" height="42" rx="9" fill="var(--surface-2)" stroke="var(--border-strong)" stroke-width="1.5"/>
+  <rect x="1168" y="354" width="5" height="42" fill="var(--accent)" opacity="0.5"/>
+  <text x="1260" y="372" text-anchor="middle" font-family="var(--sans)" font-size="12.5" font-weight="650" fill="var(--text)">log_run · log_entry</text>
+  <text x="1260" y="387" text-anchor="middle" font-family="var(--mono)" font-size="9.5" fill="var(--text-muted)">MongoDB · same fields</text>
+  <rect x="1168" y="402" width="180" height="42" rx="9" fill="none" stroke="var(--config-line)" stroke-width="1.3" stroke-dasharray="4 4"/>
+  <text x="1258" y="420" text-anchor="middle" font-family="var(--sans)" font-size="12.5" font-weight="650" fill="var(--text-muted)">bucket / topics</text>
+  <text x="1258" y="435" text-anchor="middle" font-family="var(--mono)" font-size="9.5" fill="var(--text-muted)">to_json() lines</text>
+
+  <text x="1112" y="271" font-family="var(--mono)" font-size="9.5" fill="var(--text-muted)">writes</text>
+  <line x1="1098" y1="279" x2="1166" y2="279" stroke="var(--text-muted)" stroke-width="1.5" marker-end="url(#arrowText)"/>
+  <line x1="1098" y1="327" x2="1166" y2="327" stroke="var(--text-muted)" stroke-width="1.5" marker-end="url(#arrowText)"/>
+  <line x1="1098" y1="375" x2="1166" y2="375" stroke="var(--text-muted)" stroke-width="1.5" marker-end="url(#arrowText)"/>
+  <line x1="1098" y1="423" x2="1166" y2="423" stroke="var(--config-line)" stroke-width="1.3" stroke-dasharray="4 4" marker-end="url(#arrowNeutral)"/>
+
+  <!-- ===== HOT LANE ===== -->
+  <rect x="280" y="528" width="250" height="84" rx="10" fill="var(--surface)" stroke="var(--accent)" stroke-width="1.6"/>
+  <text x="405" y="553" text-anchor="middle" font-family="var(--sans)" font-size="13.5" font-weight="650" fill="var(--text)">1 LogEntry per item</text>
+  <text x="405" y="572" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--text-muted)">dict · list · JSON · CSV · text</text>
+  <text x="405" y="586" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--text-muted)">+ ids, caller, thread, exception</text>
+  <text x="405" y="600" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--text-muted)">bad input raises here</text>
+
+  <rect x="610" y="534" width="220" height="72" rx="10" fill="var(--surface)" stroke="var(--accent)" stroke-width="1.6"/>
+  <text x="720" y="562" text-anchor="middle" font-family="var(--sans)" font-size="13.5" font-weight="650" fill="var(--text)">BufferedWriter</text>
+  <text x="720" y="580" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--text-muted)">queue + 1 background thread</text>
+  <text x="720" y="594" text-anchor="middle" font-family="var(--mono)" font-size="10" fill="var(--text-muted)">(mode="sync": no thread)</text>
+
+  <rect x="610" y="624" width="400" height="50" rx="8" fill="var(--surface)" stroke="var(--border)" stroke-width="1.2" stroke-dasharray="3 3"/>
+  <text x="624" y="644" font-family="var(--mono)" font-size="10" fill="var(--text-muted)">FK / CHECK violation: only that row dropped (on_drop)</text>
+  <text x="624" y="659" font-family="var(--mono)" font-size="10" fill="var(--text-muted)">outage: batch retried 3x with backoff, then on_drop</text>
+  <line x1="720" y1="606" x2="720" y2="622" stroke="var(--border-strong)" stroke-width="1.3" marker-end="url(#arrowNeutral)"/>
+
+  <line x1="190" y1="370" x2="278" y2="560" stroke="var(--accent)" stroke-width="2" marker-end="url(#arrowAccent)"/>
+  <text x="84" y="430" font-family="var(--mono)" font-size="10.5" fill="var(--accent-strong)">audit.info(...)</text>
+  <text x="84" y="444" font-family="var(--mono)" font-size="10.5" fill="var(--accent-strong)">Telemetry.log_*()</text>
+  <text x="84" y="458" font-family="var(--mono)" font-size="10.5" fill="var(--accent-strong)">AuditLogHandler</text>
+
+  <line x1="530" y1="570" x2="608" y2="570" stroke="var(--accent)" stroke-width="2" marker-end="url(#arrowAccent)"/>
+  <text x="536" y="562" font-family="var(--mono)" font-size="9.5" fill="var(--accent-strong)">submit()</text>
+
+  <line x1="830" y1="548" x2="896" y2="466" stroke="var(--accent)" stroke-width="2" marker-end="url(#arrowAccent)"/>
+  <text x="872" y="522" font-family="var(--mono)" font-size="10" fill="var(--accent-strong)">write_batch(): 500 rows · 2 s · flush()</text>
+  <text x="872" y="536" font-family="var(--mono)" font-size="10" fill="var(--accent-strong)">idempotent: ON CONFLICT · dedup token</text>
+</svg>
+</div>
+<figcaption>
+  Grey dashed: once per logger, at construction. Blue: once when each run starts and once when it ends, written before the call returns. Amber: every log call, off the host's critical path. The dashed connection library is outside c66_logger; dashed sinks and targets are planned but not built.
+</figcaption>
+</figure>
+
+<div class="legend">
+  <span class="swatch"><svg viewBox="0 0 34 10"><line x1="0" y1="5" x2="34" y2="5" stroke="var(--config-line)" stroke-width="2" stroke-dasharray="5 4"/></svg> once, at construction</span>
+  <span class="swatch"><svg viewBox="0 0 34 10"><line x1="0" y1="5" x2="34" y2="5" stroke="var(--run)" stroke-width="2.4"/></svg> per run, synchronous</span>
+  <span class="swatch"><svg viewBox="0 0 34 10"><line x1="0" y1="5" x2="34" y2="5" stroke="var(--accent)" stroke-width="2.4"/></svg> every log call, buffered</span>
+</div>
+
+<h2>What each piece is responsible for</h2>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Component</th><th>Role</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Connection library</td><td class="role">Outside c66_logger: c66_clients, or c66-chatbot's <code>get_pg_conn()</code> / <code>get_ch_client()</code> today. The host passes what it returns as <code>connection=</code>: a connection, a pool, an engine, a client or the factory itself. c66_logger never closes it.</td></tr>
+    <tr><td><code>AuditLogger</code></td><td class="role">Created by the host with <code>target_type</code> and <code>connection</code> (or a ready-made <code>sink=</code>), plus <code>tenant_id</code> and <code>environment_id</code>, or none and <code>bind()</code> one logger per tenant, all sharing one sink and writer. It checks the tables while it's being built. It holds no global state.</td></tr>
+    <tr><td><code>Telemetry</code></td><td class="role">c66-chatbot's nine logging helpers (<code>log_event</code>, <code>log_llm_call</code>, …) with the same signatures. A chat request becomes one run; its LLM calls, graph queries and retrieval become entries in it. Never raises.</td></tr>
+    <tr><td><code>audit.run()</code></td><td class="role">One <code>logs.log_run</code> row (<code>record_run()</code> writes a finished one in one call). It's inserted as Running and updated to Completed, Failed or Cancelled, with <code>ended_at</code>, <code>duration_ms</code> and <code>error_summary</code>. Both writes are synchronous. Entries logged inside the block get its <code>run_id</code>.</td></tr>
+    <tr><td><code>LogEntry</code></td><td class="role">One <code>logs.log_entry</code> row per item. Keys that match a column set it; the rest go to <code>metadata_json</code>. Location, process, thread and exception are captured automatically. Levels are limited to the five the CHECK allows.</td></tr>
+    <tr><td><code>BufferedWriter</code></td><td class="role">Queues entries, and one daemon thread writes them in batches of 500, every 2 s, or on <code>flush()</code>. <code>SyncWriter</code> replaces it when <code>mode="sync"</code>.</td></tr>
+    <tr><td><code>PostgresSink</code></td><td class="role">Plain DB-API (psycopg2 or psycopg 3) on the caller's connection, pool, engine or factory. Writes the existing tables and never creates them. Entry inserts are idempotent. If a batch hits an FK or CHECK violation, it retries row by row so only the bad rows are rejected. Runs are upserted on <code>run_id</code>.</td></tr>
+    <tr><td><code>ClickHouseSink</code></td><td class="role">The same two tables as <code>ReplacingMergeTree</code>, on the caller's <code>clickhouse_connect</code> or <code>clickhouse_driver</code> client. Retried batches carry a dedup token, so they don't duplicate. Each run status is a new row version; read <code>log_run</code> with <code>FINAL</code>. No foreign keys.</td></tr>
+    <tr><td><code>MongoSink</code></td><td class="role">Two collections, <code>log_entry</code> and <code>log_run</code>, with the same field names as the tables. <code>_id</code> is <code>log_id</code> or <code>run_id</code>.</td></tr>
+    <tr><td>S3 / Kafka (planned)</td><td class="role">One <code>BaseSink</code> subclass each, implementing <code>write_batch</code> and <code>write_run</code>. <code>to_json()</code> gives the table-shaped JSON they'd write.</td></tr>
+  </tbody>
+</table>
+</div>
+</body>
+</html>

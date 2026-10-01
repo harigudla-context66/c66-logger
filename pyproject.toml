@@ -1,0 +1,28 @@
+[project]
+name = "c66-logger"
+version = "0.4.0"
+description = "Multi-tenant logging to logs.log_entry / logs.log_run in Postgres or ClickHouse (MongoDB too; pluggable for S3/Kafka), using the host's own connections. Built to be embedded in other Python packages."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = []  # core has no runtime deps; each target's driver is an extra
+
+[project.optional-dependencies]
+postgres = ["psycopg2-binary>=2.9"]  # psycopg 3 also works if installed instead
+clickhouse = ["clickhouse-connect>=0.8"]
+mongodb = ["pymongo>=4.0"]
+all = ["c66-logger[postgres,clickhouse,mongodb]"]
+dev = ["c66-logger[all]", "pytest>=7.0", "mongomock>=4.1", "chdb>=3.0", "SQLAlchemy>=2.0", "psycopg[binary]>=3.1"]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["c66_logger*"]
+
+[tool.setuptools.package-data]
+c66_logger = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: needs a real database (set C66_TEST_POSTGRES_DSN / C66_TEST_MONGO_URI / C66_TEST_CLICKHOUSE_HOST)"]
