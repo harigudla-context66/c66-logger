@@ -9,4 +9,4 @@
 | [sql/clickhouse_logs_schema.sql](sql/clickhouse_logs_schema.sql) | ClickHouse DDL for the same two tables (generated from `clickhouse_ddl()`) |
 | [architecture-diagram.svg](architecture-diagram.svg) | Data-flow diagram, embeddable in Markdown |
 | [architecture-diagram.html](architecture-diagram.html) | The same diagram as a standalone page with a component table; follows light/dark mode |
-| [../examples/](../examples/README.md) | 16 runnable examples, one per use case |
+| [../examples/](../examples/README.md) | 17 runnable examples, one per use case |

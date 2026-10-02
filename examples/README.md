@@ -22,6 +22,7 @@ Each file covers one use case and runs on its own. Together they write to
 | 14 | [14_testing_your_package/](14_testing_your_package/) | Unit-test a host package with the `memory` target | pytest |
 | 15 | [15_clickhouse_quickstart.py](15_clickhouse_quickstart.py) | One run plus its entries in ClickHouse; reading `log_run` with `FINAL` | ClickHouse (embedded if unset) |
 | 16 | [16_chatbot_telemetry.py](16_chatbot_telemetry.py) | Every c66-chatbot logging call through `Telemetry`: a chat request, ingestion, feedback, eval, deletion, audit, `print` → logging | ClickHouse (embedded) or `postgres` arg |
+| 17 | [17_data_connection_layer.py](17_data_connection_layer.py) | Log through c66-data-connection-layer: pass `manager.get("logs_db")`; c66_logger borrows from its pool | Postgres + `enterprise_connectors` |
 
 ## Setup
 
@@ -66,8 +67,9 @@ python 04_runs.py                 # or: python 04_runs.py memory
 python -m pytest 14_testing_your_package -q
 python 15_clickhouse_quickstart.py
 python 16_chatbot_telemetry.py            # or: python 16_chatbot_telemetry.py postgres
+python 17_data_connection_layer.py        # needs c66-data-connection-layer installed
 ```
 
-All 16 were run on 2026-10-01. The Postgres ones ran against Postgres 16 with
+All 17 were run on 2026-10-02 (17 with c66-data-connection-layer's dev branch). The Postgres ones ran against Postgres 16 with
 the exact DDL. The ClickHouse ones ran against embedded ClickHouse 26.9 (chdb),
 not a server. MongoDB (02) ran against mongomock, a MongoDB stand-in.

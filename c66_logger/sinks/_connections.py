@@ -10,6 +10,10 @@ that library hands out and never close anything they didn't create:
     object with .getconn/.putconn     a connection pool (psycopg2.pool, psycopg_pool):
                                       borrow per write, give back after
     object with .raw_connection()     a SQLAlchemy Engine: borrow per write
+    object with .connection()         a connector whose connection() is a context
+                                      manager lending a pooled connection, e.g.
+                                      enterprise_connectors' manager.get("logs_db"):
+                                      borrow per write, returned when the block ends
     zero-argument callable            a factory such as c66_clients' get_pg_conn():
                                       called per write; .close() afterwards, which
                                       for a pooled proxy returns it to its pool
@@ -101,6 +105,25 @@ class FactoryConnections(ConnectionProvider):
                 pass
 
 
+class LeasedConnections(ConnectionProvider):
+    """A connector whose ``connection()`` lends a pooled connection as a context manager.
+
+    This is the shape of c66-data-connection-layer (``enterprise_connectors``):
+    ``with connector.connection() as conn:`` checks a psycopg connection out of
+    its pool and returns it when the block ends. The library resets the
+    connection on return (rolls back an open transaction, drops a broken one),
+    so nothing else is needed here. The connector itself is never closed.
+    """
+
+    def __init__(self, source: Any):
+        self._source = source
+
+    @contextlib.contextmanager
+    def acquire(self):
+        with self._source.connection() as conn:
+            yield conn
+
+
 class OwnedPool(ConnectionProvider):
     """A small pool the sink creates itself from a DSN / connection parameters."""
 
@@ -154,11 +177,19 @@ def provider_for(connection: Any) -> ConnectionProvider:
         return PoolConnections(connection)
     if hasattr(connection, "raw_connection"):  # SQLAlchemy Engine
         return FactoryConnections(connection.raw_connection)
+    if callable(getattr(connection, "connection", None)):  # enterprise_connectors connector
+        return LeasedConnections(connection)
     if callable(connection):
         return FactoryConnections(connection)
+    if callable(getattr(connection, "get", None)) and callable(getattr(connection, "names", None)):
+        raise ConfigurationError(
+            f"got a {type(connection).__name__}; pass one named connection from it, "
+            'e.g. connection=manager.get("logs_db")'
+        )
     raise ConfigurationError(
         f"don't know how to use a {type(connection).__name__} as a Postgres connection: pass a DB-API "
-        "connection, a pool with getconn()/putconn(), a SQLAlchemy Engine, or a zero-argument factory"
+        "connection, a pool with getconn()/putconn(), a SQLAlchemy Engine, a connector with a "
+        "connection() context manager (enterprise_connectors), or a zero-argument factory"
     )
 
 

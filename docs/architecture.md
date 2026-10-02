@@ -1,6 +1,6 @@
 # c66_logger — architecture (v0.4)
 
-_Last updated 2026-10-01 · See also: [implementation-guide.md](implementation-guide.md) · [chatbot-log-mapping.md](chatbot-log-mapping.md) · [data-flow diagram](architecture-diagram.html) · DDL: [Postgres](sql/logs_schema.sql), [ClickHouse](sql/clickhouse_logs_schema.sql)_
+_Last updated 2026-10-02 · See also: [implementation-guide.md](implementation-guide.md) · [chatbot-log-mapping.md](chatbot-log-mapping.md) · [data-flow diagram](architecture-diagram.html) · DDL: [Postgres](sql/logs_schema.sql), [ClickHouse](sql/clickhouse_logs_schema.sql)_
 
 Multi-tenant logging package, embedded inside other Python packages. It writes
 **log entries** to `logs.log_entry` and **run lifecycles** to `logs.log_run`,
@@ -17,6 +17,7 @@ credentials, and never alters the tables.
 2. **Target tables (2026-09-23).** Write to the existing `logs.log_entry` and `logs.log_run` ([sql/logs_schema.sql](sql/logs_schema.sql)). Both have foreign keys into `app.*`.
 3. **Palvinder (2026-10-01).** Support Postgres **and ClickHouse**. c66_logger must cover every logging call c66-chatbot makes today. Connections come from a separate connection library; c66_logger takes the object it returns and logs through it.
 4. **Destination for the chatbot's calls (2026-10-01).** Everything goes into `log_run` / `log_entry`. The old per-event tables (`events`, `llm_calls`, `audit_log`, …) are not written; their columns go to `metadata_json`. Field map: [chatbot-log-mapping.md](chatbot-log-mapping.md).
+5. **Connection library (2026-10-02).** The connection library is Prajakta's c66-data-connection-layer (`enterprise_connectors`, dev branch, Postgres only so far). c66_logger takes one of its connectors, `manager.get("<name>")`, and borrows a pooled connection per write through `connector.connection()`.
 
 ## What changed in v0.4 (from v0.3)
 
@@ -74,6 +75,7 @@ There's no singleton and no global cache. Each root `AuditLogger` owns one sink;
 
 | Postgres `connection=` | What c66_logger does with it |
 | --- | --- |
+| c66-data-connection-layer connector, `manager.get("logs_db")` | `with connector.connection() as conn` per write; the library's pool resets the connection on return. The connector is never closed |
 | DB-API connection (psycopg2 / psycopg 3) | Shares it behind a lock and commits after each write. It must be the logger's own connection, not one with the app's open transaction |
 | Pool with `getconn()` / `putconn()` | Borrows per write and gives it back (`close=True` if it broke) |
 | SQLAlchemy Engine | `raw_connection()` per write, then `close()` (back to the pool) |
@@ -89,14 +91,16 @@ There's no singleton and no global cache. Each root `AuditLogger` owns one sink;
 
 ## Status
 
-- **Tests:** 138 pass, 4 skipped (the real-ClickHouse-server variants; they run when `C66_TEST_CLICKHOUSE_HOST` is set). Postgres tests run against Postgres 16 with the exact DDL, through every connection style, including a pooled proxy like the chatbot's `get_pg_conn`. ClickHouse tests run against embedded ClickHouse 26.9 (chdb), with rows encoded by `clickhouse_connect` itself. The `Telemetry` tests check that every signature matches `app_common.py` and replay a chat request on both databases.
-- **Examples:** all 16 run.
+- **Tests:** 144 pass, 4 skipped (the real-ClickHouse-server variants; they run when `C66_TEST_CLICKHOUSE_HOST` is set). Postgres tests run against Postgres 16 with the exact DDL, through every connection style, including a pooled proxy like the chatbot's `get_pg_conn`. ClickHouse tests run against embedded ClickHouse 26.9 (chdb), with rows encoded by `clickhouse_connect` itself. The `Telemetry` tests check that every signature matches `app_common.py` and replay a chat request on both databases.
+- **c66-data-connection-layer:** tested with its dev branch (`9b7112c`) installed: logging through a connector built in code and one from `connections.yaml`, 6 threads on a 2-connection pool, FK-rejected rows, and the chatbot `Telemetry` path. Every connection went back to its pool; the connector stayed open.
+- **Examples:** all 17 run.
 - **MongoDB:** tested with mongomock only.
 
 ## Open items
 
 - **ClickHouse server:** run the 4 skipped tests against a real server (`C66_TEST_CLICKHOUSE_HOST`).
-- **c66_clients:** its `postgres.py` and `clickhouse.py` are stubs. The design assumes they return what `get_pg_conn` (psycopg2 pooled proxy) and `get_ch_client` (clickhouse_connect client) return today.
+- **ClickHouse in the connection library:** c66-data-connection-layer has Postgres only. Until it has ClickHouse, ClickHouse logging uses the app's `clickhouse_connect` client (`get_ch_client`). When it lands, check what its connector lends (a client per `connection()` or a shared one) and add it the same way.
+- **Package name:** the library installs as `enterprise-connectors`, from git (dev branch) for now; c66-platform's `packages/c66-clients` is still a stub. Settle which one apps use.
 - **For Pal** (details in [chatbot-log-mapping.md](chatbot-log-mapping.md#open-points-for-pal)):
   - Where `resolve_tenant` gets `app.tenant` UUIDs from (the chatbot only has client names).
   - Which system tenant owns platform-level events (eval runs, startup messages).

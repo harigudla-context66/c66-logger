@@ -1,6 +1,6 @@
 [project]
 name = "c66-logger"
-version = "0.4.0"
+version = "0.4.1"
 description = "Multi-tenant logging to logs.log_entry / logs.log_run in Postgres or ClickHouse (MongoDB too; pluggable for S3/Kafka), using the host's own connections. Built to be embedded in other Python packages."
 readme = "README.md"
 requires-python = ">=3.9"

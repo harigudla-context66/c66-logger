@@ -1,11 +1,12 @@
 # c66-chatbot logging → c66_logger
 
-_Last updated 2026-10-01 · Source reviewed: c66-chatbot `app_common.py` at commit `5bb35d3` · See also: [architecture.md](architecture.md) · [example 16](../examples/16_chatbot_telemetry.py)_
+_Last updated 2026-10-02 · Source reviewed: c66-chatbot `app_common.py` at commit `5bb35d3` · See also: [architecture.md](architecture.md) · [example 16](../examples/16_chatbot_telemetry.py)_
 
 Every logging call c66-chatbot makes today can be made through c66_logger. The
 data goes to `log_run` / `log_entry`, in Postgres or ClickHouse, using the
-connections the app already gets from its connection library (`get_pg_conn()`,
-`get_ch_client()`, or c66_clients once it's filled in).
+connections the app gets from its connection library: a c66-data-connection-layer
+connector for Postgres (`manager.get("logs_db")`), or today's `get_pg_conn()` /
+`get_ch_client()`.
 
 `c66_logger.Telemetry` has one method per helper in `app_common.py`. Each
 method has the **same name, parameters and defaults**, and a test checks this.
@@ -46,7 +47,9 @@ originals, the methods never raise.
 # app_common.py — once at startup
 from c66_logger import AuditLogger, Telemetry
 
-_audit = AuditLogger(target_type="clickhouse", connection=get_ch_client)   # or target_type="postgres", connection=get_pg_conn
+_audit = AuditLogger(target_type="clickhouse", connection=get_ch_client)
+# or Postgres through c66-data-connection-layer:
+# _audit = AuditLogger(target_type="postgres", connection=connections.get("logs_db"))   # connections = ConnectorManager.from_yaml(...)
 telemetry = Telemetry(
     _audit,
     resolve_tenant=lookup_tenant_ids,          # client_name -> (tenant_id, environment_id), from app.tenant
@@ -79,7 +82,7 @@ log.addHandler(telemetry.logging_handler())
 
 | | Today | With c66_logger |
 | --- | --- | --- |
-| Connections | each call opens a new ClickHouse client (`get_ch_client()`). Each audit event borrows a Postgres connection | one shared client or pool. Postgres borrows from `get_pg_conn()` per batch and returns it |
+| Connections | each call opens a new ClickHouse client (`get_ch_client()`). Each audit event borrows a Postgres connection | one shared client or pool. Postgres borrows from the connector's pool (or `get_pg_conn()`) per batch and returns it |
 | When the write happens | inline, inside the request, on every call | entries are queued and batched by one background thread (500 rows / 2 s). Only run rows are written inline |
 | On failure | the error is printed, the row is lost | retried 3× with backoff, then `on_drop` (e.g. a dead-letter file). FK-violating rows are dropped individually |
 | Duplicates on retry | n/a | none: `ON CONFLICT DO NOTHING` (Postgres), dedup token + ReplacingMergeTree (ClickHouse) |

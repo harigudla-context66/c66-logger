@@ -4,12 +4,13 @@ Multi-tenant logging for Python packages. It writes log entries to
 `log_entry` and run lifecycles to `log_run`, in **Postgres or ClickHouse**
 (MongoDB too). It uses the connections your application already has: pass
 the connection object, pool or factory your connection library hands out
-(c66_clients, `get_pg_conn()`, `get_ch_client()`). c66_logger never looks up
+(c66-data-connection-layer's `manager.get("logs_db")`, `get_pg_conn()`,
+`get_ch_client()`). c66_logger never looks up
 credentials and never closes what it didn't open.
 
 | Target | Tables | Pass as `connection` | Install |
 | --- | --- | --- | --- |
-| `postgres` | existing `logs.log_entry` / `logs.log_run` ([DDL](docs/sql/logs_schema.sql)) | psycopg2/psycopg connection, pool, factory (`get_pg_conn`), SQLAlchemy Engine, or `{"dsn": ...}` | `pip install "c66-logger[postgres]"` |
+| `postgres` | existing `logs.log_entry` / `logs.log_run` ([DDL](docs/sql/logs_schema.sql)) | enterprise_connectors connector (`manager.get("logs_db")`), psycopg2/psycopg connection, pool, factory (`get_pg_conn`), SQLAlchemy Engine, or `{"dsn": ...}` | `pip install "c66-logger[postgres]"` |
 | `clickhouse` | `logs.log_entry` / `logs.log_run`, same columns ([DDL](docs/sql/clickhouse_logs_schema.sql)) | clickhouse_connect client, factory (`get_ch_client`), clickhouse_driver Client, or `{"host": ...}` | `pip install "c66-logger[clickhouse]"` |
 | `mongodb` | collections `log_entry` / `log_run`, same fields | `{"client": MongoClient}` or `{"uri": ...}` | `pip install "c66-logger[mongodb]"` |
 | `memory` | in-memory, for unit tests of host packages | — | (no extra) |
@@ -29,7 +30,7 @@ all have a same-signature replacement in `c66_logger.Telemetry`. See
 - [Data-flow diagram](docs/architecture-diagram.svg) ([interactive page](docs/architecture-diagram.html))
 - [c66-chatbot log mapping](docs/chatbot-log-mapping.md) — every current log call, where it goes now, dashboard queries
 - [Table DDL](docs/sql/logs_schema.sql) — Postgres `logs.log_entry` / `logs.log_run`; [ClickHouse DDL](docs/sql/clickhouse_logs_schema.sql)
-- [Examples](examples/README.md) — 16 runnable use cases
+- [Examples](examples/README.md) — 17 runnable use cases
 
 ## Quick start
 
@@ -125,13 +126,33 @@ message, a level the table doesn't allow, and an id that isn't a UUID.
 
 | You pass | c66_logger does |
 | --- | --- |
-| a factory, e.g. `get_pg_conn` | calls it per write and `close()`s the result. A pooled proxy's `close()` returns it to its pool. **Recommended** |
+| a c66-data-connection-layer connector, `manager.get("logs_db")` | `with connector.connection() as conn` per write: borrows from the library's pool and gives it back. **Recommended** |
+| a factory, e.g. `get_pg_conn` | calls it per write and `close()`s the result. A pooled proxy's `close()` returns it to its pool |
 | a pool with `getconn()`/`putconn()` (psycopg2.pool, psycopg_pool) | borrows per write, gives it back |
 | a SQLAlchemy `Engine` | `raw_connection()` per write, returned to its pool |
 | one connection object | uses it for its lifetime, one write at a time, and commits after each write. Give the logger its own connection, not one in the middle of your transaction |
 | `{"dsn": ...}` or `{"host", "database", "user", "password", "port"}` | opens its own small pool (`pool_size`, default 4); closes it on `close()` |
 
 Options: `schema` (default `logs`), `entry_table` (`log_entry`), `run_table` (`log_run`).
+
+With [c66-data-connection-layer](https://github.com/context66/c66-data-connection-layer)
+(`enterprise_connectors`, Postgres only so far), the app owns the login and the pool;
+c66_logger only borrows:
+
+```python
+from enterprise_connectors import ConnectorManager
+
+manager = ConnectorManager.from_yaml("connections.yaml")      # once, at startup
+audit = AuditLogger(target_type="postgres", connection=manager.get("logs_db"))
+...
+audit.close()      # flushes; leaves the connector open
+manager.close()    # the app closes its connections
+```
+
+Size the connection's pool for the logger too: buffered mode borrows one
+connection at a time for entries, plus one per run start/end. If the pool is
+exhausted, a write waits up to the pool's `checkout_timeout` and is then retried.
+See [example 17](examples/17_data_connection_layer.py).
 
 **clickhouse**:
 
