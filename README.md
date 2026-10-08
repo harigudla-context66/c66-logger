@@ -30,6 +30,7 @@ all have a same-signature replacement in `c66_logger.Telemetry`. See
 - [Data-flow diagram](docs/architecture-diagram.svg) ([interactive page](docs/architecture-diagram.html))
 - [c66-chatbot log mapping](docs/chatbot-log-mapping.md) — every current log call, where it goes now, dashboard queries
 - [Table DDL](docs/sql/logs_schema.sql) — Postgres `logs.log_entry` / `logs.log_run`; [ClickHouse DDL](docs/sql/clickhouse_logs_schema.sql)
+- [Using it in your project](#using-it-in-your-project-with-c66-data-connection-layer) — install, connections.yaml, startup/shutdown code, checks
 - [Examples](examples/README.md) — 18 runnable use cases
 
 ## Quick start
@@ -72,6 +73,120 @@ One process serving many tenants: create one logger without tenant ids and
 root = AuditLogger(target_type="clickhouse", connection=get_ch_client)
 acme = root.bind(tenant_id=ACME_ID, environment_id=ACME_PROD)
 ```
+
+## Using it in your project (with c66-data-connection-layer)
+
+The usual setup: your app gets its database connections from
+[c66-data-connection-layer](https://github.com/context66/c66-data-connection-layer)
+(`enterprise_connectors`), and hands one of them to c66_logger. The connection
+layer owns the login and the pool; c66_logger borrows a connection or client per
+write and gives it back. Works the same for Postgres and ClickHouse.
+
+**1. Install both packages** (neither is on a package index yet):
+
+```bash
+pip install "c66-logger @ git+https://github.com/harigudla-context66/c66-logger.git"
+pip install "enterprise-connectors[postgres,clickhouse,yaml] @ git+https://github.com/context66/c66-data-connection-layer@dev"
+pip install python-dotenv          # if you keep the passwords in a .env file
+```
+
+From local checkouts instead: `pip install -e ../c66_logger -e "../c66-data-connection-layer[postgres,clickhouse,yaml]"`.
+Install only the extras you need (`postgres`, `clickhouse`).
+
+**2. Make sure the log tables exist.** c66_logger doesn't create or change them.
+
+- Postgres: [docs/sql/logs_schema.sql](docs/sql/logs_schema.sql) (`logs.log_run`, `logs.log_entry`, with foreign keys to `app.*`).
+- ClickHouse: [docs/sql/clickhouse_logs_schema.sql](docs/sql/clickhouse_logs_schema.sql). For local development only, `create_tables=True` creates them at startup.
+
+The database user needs INSERT on both tables (and UPDATE on `log_run` in Postgres).
+
+**3. Describe the log database in your `connections.yaml`**, with the passwords in `.env`:
+
+```yaml
+connections:
+  logs_db:                                   # Postgres
+    type: postgres
+    config: {host: env://LOGS_PG_HOST, port: env://LOGS_PG_PORT, database: env://LOGS_PG_DATABASE}
+    credentials: {username: env://LOGS_PG_USER, password: env://LOGS_PG_PASSWORD}
+    pool: {max_size: 5}
+
+  logs_ch:                                   # ClickHouse (8123 = HTTP, 8443 = HTTPS / ClickHouse Cloud)
+    type: clickhouse
+    config: {host: env://LOGS_CH_HOST, port: env://LOGS_CH_PORT, secure: env://LOGS_CH_SECURE}
+    credentials: {username: env://LOGS_CH_USER, password: env://LOGS_CH_PASSWORD}
+    pool: {max_size: 4}
+```
+
+```dotenv
+LOGS_PG_HOST=db.internal
+LOGS_PG_PORT=5432
+LOGS_PG_DATABASE=appdb
+LOGS_PG_USER=logs_writer
+LOGS_PG_PASSWORD=...
+LOGS_CH_HOST=clickhouse.internal
+LOGS_CH_PORT=8123
+LOGS_CH_SECURE=false
+LOGS_CH_USER=logs_writer
+LOGS_CH_PASSWORD=...
+```
+
+**4. Create the logger once at startup, close it at shutdown:**
+
+```python
+from dotenv import load_dotenv
+from enterprise_connectors import ConnectorManager
+from c66_logger import AuditLogger
+
+load_dotenv()
+connections = ConnectorManager.from_yaml("connections.yaml")        # your app's connections
+
+audit = AuditLogger(
+    tenant_id=TENANT_ID,                  # from app.tenant
+    environment_id=ENVIRONMENT_ID,        # from app.tenant_environment
+    target_type="clickhouse",             # or "postgres" with connections.get("logs_db")
+    connection=connections.get("logs_ch"),
+    logger_name="order_service",
+)
+
+# anywhere in the app
+with audit.run("order_import", metadata={"file": "orders.csv"}):
+    audit.info({"message": "order created", "order_id": 1001})
+
+# shutdown, in this order
+audit.close()           # flushes what's queued; leaves the connector open
+connections.close()     # your app closes its own connections
+```
+
+Serving many tenants from one process: create the logger without ids and
+`bind()` one per tenant; they share the connector and one writer thread.
+
+```python
+root = AuditLogger(target_type="clickhouse", connection=connections.get("logs_ch"))
+acme = root.bind(tenant_id=ACME_ID, environment_id=ACME_PROD_ID)
+```
+
+**5. Check it worked:**
+
+```sql
+-- Postgres
+SELECT run_type, status, duration_ms FROM logs.log_run ORDER BY started_at DESC LIMIT 5;
+-- ClickHouse (runs are row versions: read them with FINAL)
+SELECT run_type, status, duration_ms FROM logs.log_run FINAL ORDER BY started_at DESC LIMIT 5;
+SELECT logger_name, level, message FROM logs.log_entry ORDER BY logged_at DESC LIMIT 20;
+```
+
+Notes:
+
+- **Pool size:** the logger borrows about one connection or client at a time for entries (one background
+  thread), plus one when a run starts or ends. Add that to what your app needs.
+- **Pass the connector, not the manager:** `connections.get("logs_ch")`. Passing the manager raises an error
+  that says so.
+- **Short-lived scripts / serverless:** add `mode="sync"` so each write finishes before the call returns.
+- **Tests of your own package:** use `target_type="memory"` instead of a database (see example 14).
+
+Runnable versions: [example 17](examples/17_data_connection_layer.py) (Postgres) and
+[example 18](examples/18_data_connection_layer_clickhouse.py) (ClickHouse). Other ways to pass a connection
+(a plain client, a pool, `get_pg_conn`, …) are listed under [Connections](#connections).
 
 ## How calls map onto the tables
 
