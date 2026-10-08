@@ -4,14 +4,14 @@ Multi-tenant logging for Python packages. It writes log entries to
 `log_entry` and run lifecycles to `log_run`, in **Postgres or ClickHouse**
 (MongoDB too). It uses the connections your application already has: pass
 the connection object, pool or factory your connection library hands out
-(c66-data-connection-layer's `manager.get("logs_db")`, `get_pg_conn()`,
-`get_ch_client()`). c66_logger never looks up
+(c66-data-connection-layer's `manager.get("logs_db")` for Postgres or ClickHouse,
+`get_pg_conn()`, `get_ch_client()`). c66_logger never looks up
 credentials and never closes what it didn't open.
 
 | Target | Tables | Pass as `connection` | Install |
 | --- | --- | --- | --- |
 | `postgres` | existing `logs.log_entry` / `logs.log_run` ([DDL](docs/sql/logs_schema.sql)) | enterprise_connectors connector (`manager.get("logs_db")`), psycopg2/psycopg connection, pool, factory (`get_pg_conn`), SQLAlchemy Engine, or `{"dsn": ...}` | `pip install "c66-logger[postgres]"` |
-| `clickhouse` | `logs.log_entry` / `logs.log_run`, same columns ([DDL](docs/sql/clickhouse_logs_schema.sql)) | clickhouse_connect client, factory (`get_ch_client`), clickhouse_driver Client, or `{"host": ...}` | `pip install "c66-logger[clickhouse]"` |
+| `clickhouse` | `logs.log_entry` / `logs.log_run`, same columns ([DDL](docs/sql/clickhouse_logs_schema.sql)) | enterprise_connectors connector (`manager.get("logs_ch")`), clickhouse_connect client, factory (`get_ch_client`), clickhouse_driver Client, or `{"host": ...}` | `pip install "c66-logger[clickhouse]"` |
 | `mongodb` | collections `log_entry` / `log_run`, same fields | `{"client": MongoClient}` or `{"uri": ...}` | `pip install "c66-logger[mongodb]"` |
 | `memory` | in-memory, for unit tests of host packages | — | (no extra) |
 | `s3`, `kafka` | planned — plug in via `register_sink()` (examples 11, 12) | — | — |
@@ -30,7 +30,7 @@ all have a same-signature replacement in `c66_logger.Telemetry`. See
 - [Data-flow diagram](docs/architecture-diagram.svg) ([interactive page](docs/architecture-diagram.html))
 - [c66-chatbot log mapping](docs/chatbot-log-mapping.md) — every current log call, where it goes now, dashboard queries
 - [Table DDL](docs/sql/logs_schema.sql) — Postgres `logs.log_entry` / `logs.log_run`; [ClickHouse DDL](docs/sql/clickhouse_logs_schema.sql)
-- [Examples](examples/README.md) — 17 runnable use cases
+- [Examples](examples/README.md) — 18 runnable use cases
 
 ## Quick start
 
@@ -136,8 +136,8 @@ message, a level the table doesn't allow, and an id that isn't a UUID.
 Options: `schema` (default `logs`), `entry_table` (`log_entry`), `run_table` (`log_run`).
 
 With [c66-data-connection-layer](https://github.com/context66/c66-data-connection-layer)
-(`enterprise_connectors`, Postgres only so far), the app owns the login and the pool;
-c66_logger only borrows:
+(`enterprise_connectors`), the app owns the login and the pool; c66_logger only
+borrows. The same works for its ClickHouse connector (below):
 
 ```python
 from enterprise_connectors import ConnectorManager
@@ -158,6 +158,7 @@ See [example 17](examples/17_data_connection_layer.py).
 
 | You pass | c66_logger does |
 | --- | --- |
+| a c66-data-connection-layer ClickHouse connector, `manager.get("logs_ch")` | `with connector.connection() as client` per write: borrows a client from the library's pool (one per caller) and gives it back. **Recommended** |
 | a clickhouse_connect client | shares it, one call at a time. Create it with `autogenerate_session_id=False` if your threads use it too |
 | a factory, e.g. `get_ch_client` | calls it once, reuses the client |
 | a clickhouse_driver `Client` | uses `execute()` |
@@ -165,6 +166,13 @@ See [example 17](examples/17_data_connection_layer.py).
 
 Options: `schema` (ClickHouse database, default `logs`), `entry_table`, `run_table`,
 and `create_tables=True` to run the DDL at startup (development).
+
+```python
+manager = ConnectorManager.from_yaml("connections.yaml")      # entry with type: clickhouse
+audit = AuditLogger(target_type="clickhouse", connection=manager.get("logs_ch"))
+```
+
+See [example 18](examples/18_data_connection_layer_clickhouse.py).
 
 **mongodb**: exactly one of `uri` or `client` (an existing `MongoClient`),
 plus `database`. Optional: `entry_collection`, `run_collection`,

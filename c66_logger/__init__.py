@@ -37,7 +37,7 @@ from .record import LEVELS, RUN_STATUSES, LogEntry, LogRun
 from .sinks import BaseSink, available_targets, create_sink, register_sink
 from .telemetry import Telemetry
 
-__version__ = "0.4.1"
+__version__ = "0.4.2"
 
 # Library etiquette: never emit to the host app's handlers unless it opts in.
 _logging.getLogger(__name__).addHandler(_logging.NullHandler())

@@ -23,10 +23,13 @@ HOW_TO_CONNECT_AND_FETCH_DATA.md):
     manager = ConnectorManager.from_yaml("connections.yaml")
     audit = AuditLogger(..., target_type="postgres", connection=manager.get("logs_db"))
 
-This example builds the same connector in code from C66_EXAMPLE_POSTGRES_DSN.
+This example builds the same connector in code from C66_EXAMPLE_POSTGRES_DSN
+(URL-encode special characters in the password, e.g. @ as %40), and logs as
+C66_EXAMPLE_TENANT_ID / C66_EXAMPLE_ENVIRONMENT_ID. Against a real database
+those must be ids that exist in app.tenant / app.tenant_environment.
 """
 
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from _settings import POSTGRES_DSN, TENANT
 
@@ -45,7 +48,7 @@ def main() -> None:
         "postgres",
         {"host": url.hostname, "port": url.port or 5432, "database": url.path.lstrip("/"),
          "application_name": "order_service-logs"},                # shows up in pg_stat_activity
-        UsernamePassword(username=url.username or "postgres", password=url.password or ""),
+        UsernamePassword(username=unquote(url.username or "postgres"), password=unquote(url.password or "")),
         pool_config={"max_size": 5},
     )
     try:

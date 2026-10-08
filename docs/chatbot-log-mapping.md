@@ -1,6 +1,6 @@
 # c66-chatbot logging → c66_logger
 
-_Last updated 2026-10-02 · Source reviewed: c66-chatbot `app_common.py` at commit `5bb35d3` · See also: [architecture.md](architecture.md) · [example 16](../examples/16_chatbot_telemetry.py)_
+_Last updated 2026-10-08 · Source reviewed: c66-chatbot `app_common.py` at commit `5bb35d3` · See also: [architecture.md](architecture.md) · [example 16](../examples/16_chatbot_telemetry.py)_
 
 Every logging call c66-chatbot makes today can be made through c66_logger. The
 data goes to `log_run` / `log_entry`, in Postgres or ClickHouse, using the
@@ -47,9 +47,10 @@ originals, the methods never raise.
 # app_common.py — once at startup
 from c66_logger import AuditLogger, Telemetry
 
-_audit = AuditLogger(target_type="clickhouse", connection=get_ch_client)
-# or Postgres through c66-data-connection-layer:
-# _audit = AuditLogger(target_type="postgres", connection=connections.get("logs_db"))   # connections = ConnectorManager.from_yaml(...)
+connections = ConnectorManager.from_yaml("connections.yaml")          # c66-data-connection-layer
+_audit = AuditLogger(target_type="clickhouse", connection=connections.get("logs_ch"))
+# or: AuditLogger(target_type="postgres", connection=connections.get("logs_db"))
+# or, before switching to the library: AuditLogger(target_type="clickhouse", connection=get_ch_client)
 telemetry = Telemetry(
     _audit,
     resolve_tenant=lookup_tenant_ids,          # client_name -> (tenant_id, environment_id), from app.tenant

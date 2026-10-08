@@ -50,18 +50,16 @@ from enterprise_connectors import ConnectorManager  # c66-data-connection-layer
 
 manager = ConnectorManager.from_yaml("connections.yaml")   # the app's connections, once at startup
 audit = AuditLogger(tenant_id=..., environment_id=..., target_type="postgres", connection=manager.get("logs_db"))
-
-# ClickHouse isn't in the connection library yet: pass the app's client
-audit = AuditLogger(tenant_id=..., environment_id=..., target_type="clickhouse", connection=get_ch_client())
+audit = AuditLogger(tenant_id=..., environment_id=..., target_type="clickhouse", connection=manager.get("logs_ch"))
 ```
 
 Install the connection library from its repository (dev branch for now):
-`pip install "enterprise-connectors[postgres,yaml] @ git+https://github.com/context66/c66-data-connection-layer@dev"`.
+`pip install "enterprise-connectors[postgres,clickhouse,yaml] @ git+https://github.com/context66/c66-data-connection-layer@dev"`.
 
 | Target | `connection=` (one of) | Other options (in a dict, with `"connection": obj`) |
 | --- | --- | --- |
 | `postgres` | c66-data-connection-layer connector (`manager.get(name)`) · DB-API connection · pool (`getconn`/`putconn`) · SQLAlchemy Engine · zero-arg factory · `{"dsn": ...}` · `{"host", "database", "user", "password", "port"}` | `schema` (`logs`), `entry_table`, `run_table`, `pool_size` |
-| `clickhouse` | `clickhouse_connect` client · `clickhouse_driver` Client · zero-arg factory · `{"host", "port", "username", "password", "secure"}` | `schema` (`logs`), `entry_table`, `run_table`, `create_tables` (dev only) |
+| `clickhouse` | c66-data-connection-layer connector (`manager.get(name)`) · `clickhouse_connect` client · `clickhouse_driver` Client · zero-arg factory · `{"host", "port", "username", "password", "secure"}` | `schema` (`logs`), `entry_table`, `run_table`, `create_tables` (dev only) |
 | `mongodb` | `{"uri": ...}` · `{"client": ...}`, plus `database` | `entry_collection`, `run_collection`, `create_indexes` |
 
 A plain DB-API connection is shared behind a lock and committed after every write, so give the logger its own connection, not one that carries your app's transaction. A factory or a pool is the better fit for a web app.
@@ -181,7 +179,7 @@ WHERE run_id = '<run_id>' ORDER BY logged_at;
 SELECT run_type, status, duration_ms FROM logs.log_run FINAL WHERE run_id = '<run_id>';
 ```
 
-The package's tests apply this exact DDL to a throwaway Postgres 16 database. Set `C66_TEST_POSTGRES_DSN` to run them there. They cover runs, entries, FK rejections, retries, upserts and every connection style. The ClickHouse tests run on embedded ClickHouse (chdb), or on a server when `C66_TEST_CLICKHOUSE_HOST` is set. 144 pass.
+The package's tests apply this exact DDL to a throwaway Postgres 16 database. Set `C66_TEST_POSTGRES_DSN` to run them there. They cover runs, entries, FK rejections, retries, upserts and every connection style. The ClickHouse tests run on embedded ClickHouse (chdb), or on a server when `C66_TEST_CLICKHOUSE_HOST` is set. 149 pass.
 
 ## Troubleshooting
 

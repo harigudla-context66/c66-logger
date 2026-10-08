@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import re
 import threading
 import uuid
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence
 
 from ..exceptions import ConfigurationError, MissingDependencyError, RejectedRecordsError
 from ..record import LogEntry, LogRun, utcnow
@@ -120,6 +121,10 @@ class ClickHouseSink(BaseSink):
                       - a clickhouse_driver.Client
                       - a zero-argument factory returning either (e.g. the chatbot's
                         ``get_ch_client``); called once, the client is then reused
+                      - a c66-data-connection-layer (enterprise_connectors) ClickHouse
+                        connector, ``manager.get("logs_ch")``: every write borrows a client
+                        with ``connector.connection()`` and hands it back, so the logger
+                        uses the library's pool, login and health checks
                       Nothing passed in is ever closed by the sink.
     * ``host`` (+ ``port``, ``username``, ``password``, ``secure``, ``client_options``)
                       — the sink creates its own clickhouse_connect client and
@@ -158,6 +163,7 @@ class ClickHouseSink(BaseSink):
         self._lock = threading.RLock()
         self._client: Any = None
         self._factory: Optional[Callable[[], Any]] = None
+        self._lender: Any = None  # enterprise_connectors connector: connection() lends a client
         self._owns_client = connection is None
         if connection is None:
             try:
@@ -169,19 +175,26 @@ class ClickHouseSink(BaseSink):
                 host=host, port=port, username=username, password=password, secure=secure, **options)
         elif _is_client(connection):
             self._client = connection
+        elif callable(getattr(connection, "connection", None)):
+            self._lender = connection
         elif callable(connection):
             self._factory = connection
+        elif callable(getattr(connection, "get", None)) and callable(getattr(connection, "names", None)):
+            raise ConfigurationError(
+                f"got a {type(connection).__name__}; pass one named connection from it, "
+                'e.g. connection=manager.get("logs_ch")'
+            )
         else:
             raise ConfigurationError(
                 f"don't know how to use a {type(connection).__name__} as a ClickHouse connection: pass a "
-                "clickhouse_connect client, a clickhouse_driver Client, or a zero-argument factory"
+                "clickhouse_connect client, a clickhouse_driver Client, a connector with a connection() "
+                "context manager (enterprise_connectors), or a zero-argument factory"
             )
 
     # ---- BaseSink --------------------------------------------------------
 
     def open(self) -> None:
-        with self._lock:
-            client = self._get_client()
+        with self._use_client() as client:
             if self._create_tables:
                 for statement in self._ddl:
                     _command(client, statement)
@@ -203,8 +216,8 @@ class ClickHouseSink(BaseSink):
         # same token for the same batch -> a retried insert is deduplicated by ClickHouse
         token = hashlib.sha256(",".join(e.log_id for e in entries).encode()).hexdigest()
         try:
-            with self._lock:
-                _insert(self._get_client(), self.schema, self.entry_table, ENTRY_COLUMNS, rows,
+            with self._use_client() as client:
+                _insert(client, self.schema, self.entry_table, ENTRY_COLUMNS, rows,
                         {"insert_deduplication_token": token})
         except Exception as exc:
             if "VIOLATED_CONSTRAINT" in str(exc) or "Code: 469" in str(exc):
@@ -215,8 +228,8 @@ class ClickHouseSink(BaseSink):
         row = run.as_row()
         row["created_at"] = run._first_written_at or utcnow()
         values = [[_value(c, row[c]) for c in RUN_COLUMNS]]
-        with self._lock:
-            _insert(self._get_client(), self.schema, self.run_table, RUN_COLUMNS, values, None)
+        with self._use_client() as client:
+            _insert(client, self.schema, self.run_table, RUN_COLUMNS, values, None)
 
     def close(self) -> None:
         if self._owns_client and self._client is not None:
@@ -226,6 +239,17 @@ class ClickHouseSink(BaseSink):
                 pass
 
     # ---- internals -------------------------------------------------------
+
+    @contextlib.contextmanager
+    def _use_client(self) -> Iterator[Any]:
+        """A client for one operation. A shared client is used one call at a time (a ClickHouse
+        session runs one query at a time); a connector lends each caller its own pooled client."""
+        if self._lender is not None:
+            with self._lender.connection() as client:
+                yield client
+            return
+        with self._lock:
+            yield self._get_client()
 
     def _get_client(self) -> Any:
         if self._client is None:
