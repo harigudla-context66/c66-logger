@@ -9,6 +9,9 @@ written:
   (CLI tools, serverless handlers, tests) where a background thread is
   unwanted.
 
+Records are LogEntry rows for AuditLogger and Event objects for EventLogger;
+the writers only pass them through to the sink.
+
 Both retry a failed batch with exponential backoff, then hand each record
 to ``on_drop(record, reason)``.
 """
@@ -35,7 +38,8 @@ _WAKE = object()  # queue sentinel used to interrupt the writer's idle wait
 
 
 def _default_on_drop(record: LogEntry, reason: str) -> None:
-    _log.warning("c66_logger dropped record %s: %s", record.log_id, reason)
+    record_id = getattr(record, "log_id", None) or getattr(record, "event_id", None)
+    _log.warning("c66_logger dropped record %s: %s", record_id, reason)
 
 
 class _RetryingWriter:

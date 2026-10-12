@@ -30,6 +30,10 @@ This guide goes from installation to every feature, with code you can copy. Read
 
 ---
 
+> **New in 0.5:** for telemetry, observability and audit events (OpenTelemetry-shaped,
+> key/value attributes, sent through Kafka to ClickHouse) use `EventLogger`. See
+> [events.md](events.md). This guide covers `AuditLogger`, which is unchanged.
+
 ## Part 1. Concepts
 
 Five ideas cover the whole library.

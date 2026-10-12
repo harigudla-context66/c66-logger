@@ -100,6 +100,8 @@ There's no singleton and no global cache. Each root `AuditLogger` owns one sink;
 
 ## Open items
 
+- **Events (`EventLogger`, [events.md](events.md)):** Kafka + ClickHouse + OpenTelemetry are agreed. The criticality and retention defaults are proposals to confirm with Pal. Still to build: the UI JavaScript client, spill-to-disk, alert consumers, and moving `AuditLogger` / `Telemetry` onto events.
+
 - **ClickHouse server:** run the 5 skipped tests against a real server (`C66_TEST_CLICKHOUSE_HOST`), including the one through the library's connector.
 - **MongoDB through the connection library:** it now has a MongoDB connector too (a shared `MongoClient` lent via `connection()`). c66_logger's MongoDB target still takes a `MongoClient` or URI; adding the connector is the same small change if Mongo stays a target.
 - **Package name:** the library installs as `enterprise-connectors`, from git (dev branch) for now; c66-platform's `packages/c66-clients` is still a stub. Settle which one apps use.

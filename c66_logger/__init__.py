@@ -12,6 +12,9 @@ c66_logger — multi-tenant audit logging for embedding in other Python packages
     ) as audit, audit.run("nightly_sync"):
         audit.info({"message": "order created", "order_id": 123})
 
+For telemetry, observability and audit events (OpenTelemetry-shaped, sent
+through Kafka to ClickHouse) use ``EventLogger``; see docs/events.md.
+
 Importing this package loads no database drivers and configures no logging;
 each target's driver is an optional extra (``c66-logger[postgres]``,
 ``c66-logger[clickhouse]``, ``c66-logger[mongodb]``). Targets accept the
@@ -21,6 +24,15 @@ hands out.
 
 import logging as _logging
 
+from .events import (
+    BaseEventSink,
+    Event,
+    EventLogger,
+    EventPolicy,
+    MemoryEventSink,
+    continue_trace,
+    register_event_sink,
+)
 from .exceptions import (
     C66LoggerError,
     ConfigurationError,
@@ -37,12 +49,19 @@ from .record import LEVELS, RUN_STATUSES, LogEntry, LogRun
 from .sinks import BaseSink, available_targets, create_sink, register_sink
 from .telemetry import Telemetry
 
-__version__ = "0.4.2"
+__version__ = "0.5.0"
 
 # Library etiquette: never emit to the host app's handlers unless it opts in.
 _logging.getLogger(__name__).addHandler(_logging.NullHandler())
 
 __all__ = [
+    "EventLogger",
+    "Event",
+    "EventPolicy",
+    "BaseEventSink",
+    "MemoryEventSink",
+    "register_event_sink",
+    "continue_trace",
     "AuditLogger",
     "AuditLogHandler",
     "Telemetry",
