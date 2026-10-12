@@ -23,8 +23,32 @@ c66-chatbot's current logging calls (`log_event`, `log_llm_call`, … `log_audit
 all have a same-signature replacement in `c66_logger.Telemetry`. See
 [docs/chatbot-log-mapping.md](docs/chatbot-log-mapping.md).
 
+## Events: telemetry, observability, audit (new in 0.5)
+
+`EventLogger` is the generic, OpenTelemetry-shaped logger for every service. Each event is
+a small envelope plus key/value attributes. Events are published asynchronously to **Kafka**
+and stored in **ClickHouse** (`logs.events`). Each event has a criticality (P1–P4) that
+decides alert routing and retention. See [docs/events.md](docs/events.md).
+
+```python
+from c66_logger import EventLogger
+
+events = EventLogger("pipeline-service", TENANT_ID, ENVIRONMENT_ID,
+                     target_type="kafka", connection={"bootstrap_servers": "kafka:9092"},
+                     policy={"rules": {"pipeline.run.failed": "P1"}})
+
+events.observe("pipeline.created", pipeline_id=pid)                       # observability
+events.audit("pipeline.config.updated", actor=user_id, field="schedule")  # audit
+with events.span("pipeline.run", pipeline_id=pid):                       # started / completed / failed
+    events.observe("pipeline.step.completed", step="load", rows=1200)
+```
+
+Install with `pip install "c66-logger[kafka]"`. The rest of this README covers `AuditLogger`,
+which is unchanged.
+
 ## Documentation
 
+- [Events](docs/events.md) — `EventLogger`: event model, Kafka topics, ClickHouse `logs.events`, criticality and retention
 - [User guide](docs/USER_GUIDE.md) — every feature step by step, from installation to Telemetry, with code
 - [Demo guide](DEMO_GUIDE.md) — a scripted demo from database setup to the logged rows
 - [Implementation guide](docs/implementation-guide.md) — step-by-step setup with the `salesforce` tenant
@@ -33,7 +57,7 @@ all have a same-signature replacement in `c66_logger.Telemetry`. See
 - [c66-chatbot log mapping](docs/chatbot-log-mapping.md) — every current log call, where it goes now, dashboard queries
 - [Table DDL](docs/sql/logs_schema.sql) — Postgres `logs.log_entry` / `logs.log_run`; [ClickHouse DDL](docs/sql/clickhouse_logs_schema.sql)
 - [Using it in your project](#using-it-in-your-project-with-c66-data-connection-layer) — install, connections.yaml, startup/shutdown code, checks
-- [Examples](examples/README.md) — 20 runnable use cases
+- [Examples](examples/README.md) — 21 runnable use cases
 
 ## Quick start
 

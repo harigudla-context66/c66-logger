@@ -26,6 +26,7 @@ Each file covers one use case and runs on its own. Together they write to
 | 18 | [18_data_connection_layer_clickhouse.py](18_data_connection_layer_clickhouse.py) | The same for ClickHouse: pass the library's ClickHouse connector, `manager.get("logs_ch")`; c66_logger borrows one client per write | `enterprise_connectors[clickhouse]`; ClickHouse (embedded if unset) |
 | 19 | [19_connections_yaml.py](19_connections_yaml.py) | The app's real setup: `.env` + [connections.yaml](connections.yaml) + `ConnectorManager.from_yaml(...)`; logs one run with every level to Postgres (`logs_db`) and ClickHouse (`logs_ch`) | `enterprise_connectors[postgres,clickhouse,yaml]` + `python-dotenv`; copy `.env.example` to `.env`; pass `postgres` or `clickhouse` for one target |
 | 20 | [20_telemetry_connections_yaml.py](20_telemetry_connections_yaml.py) | Case 16's chatbot `Telemetry` calls on the connections.yaml connectors, to Postgres and ClickHouse | as 19 |
+| 21 | [21_events_pipeline.py](21_events_pipeline.py) | `EventLogger`: a data pipeline's lifecycle (created, config change, runs with steps, failure) and a UI click, with criticality, retention and one trace across UI and backend | nothing; `--kafka localhost:29092` with [deploy/docker-compose.events.yml](../deploy/docker-compose.events.yml) |
 
 ## Setup
 

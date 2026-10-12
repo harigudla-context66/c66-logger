@@ -155,41 +155,13 @@ class ClickHouseSink(BaseSink):
         run_table: str = "log_run",
         create_tables: bool = False,
     ):
-        if (connection is None) == (not host):
-            raise ConfigurationError("ClickHouseSink needs exactly one of connection or host")
         self._ddl = clickhouse_ddl(schema, entry_table, run_table)  # validates the identifiers
         self.schema, self.entry_table, self.run_table = schema, entry_table, run_table
         self._create_tables = create_tables
-        self._lock = threading.RLock()
-        self._client: Any = None
-        self._factory: Optional[Callable[[], Any]] = None
-        self._lender: Any = None  # enterprise_connectors connector: connection() lends a client
-        self._owns_client = connection is None
-        if connection is None:
-            try:
-                import clickhouse_connect
-            except ImportError as exc:
-                raise MissingDependencyError("clickhouse", "clickhouse") from exc
-            options = {"autogenerate_session_id": False, **(client_options or {})}
-            self._factory = lambda: clickhouse_connect.get_client(
-                host=host, port=port, username=username, password=password, secure=secure, **options)
-        elif _is_client(connection):
-            self._client = connection
-        elif callable(getattr(connection, "connection", None)):
-            self._lender = connection
-        elif callable(connection):
-            self._factory = connection
-        elif callable(getattr(connection, "get", None)) and callable(getattr(connection, "names", None)):
-            raise ConfigurationError(
-                f"got a {type(connection).__name__}; pass one named connection from it, "
-                'e.g. connection=manager.get("logs_ch")'
-            )
-        else:
-            raise ConfigurationError(
-                f"don't know how to use a {type(connection).__name__} as a ClickHouse connection: pass a "
-                "clickhouse_connect client, a clickhouse_driver Client, a connector with a connection() "
-                "context manager (enterprise_connectors), or a zero-argument factory"
-            )
+        self._source = ClickHouseClient(connection=connection, host=host, port=port, username=username,
+                                        password=password, secure=secure, client_options=client_options,
+                                        owner="ClickHouseSink")
+        self._use_client = self._source.use
 
     # ---- BaseSink --------------------------------------------------------
 
@@ -232,16 +204,55 @@ class ClickHouseSink(BaseSink):
             _insert(client, self.schema, self.run_table, RUN_COLUMNS, values, None)
 
     def close(self) -> None:
-        if self._owns_client and self._client is not None:
-            try:
-                self._client.close()
-            except Exception:
-                pass
+        self._source.close()
 
-    # ---- internals -------------------------------------------------------
+
+class ClickHouseClient:
+    """
+    How a sink reaches ClickHouse; shared by ClickHouseSink and the events sink.
+    Accepts exactly one of ``connection`` (client, clickhouse_driver Client,
+    enterprise_connectors connector, or zero-argument factory) or ``host`` (+ options;
+    then the client is created here and closed by ``close()``).
+    """
+
+    def __init__(self, *, connection: Any = None, host: Optional[str] = None, port: Optional[int] = None,
+                 username: str = "default", password: str = "", secure: bool = False,
+                 client_options: Optional[Dict[str, Any]] = None, owner: str = "ClickHouseSink"):
+        if (connection is None) == (not host):
+            raise ConfigurationError(f"{owner} needs exactly one of connection or host")
+        self._lock = threading.RLock()
+        self._client: Any = None
+        self._factory: Optional[Callable[[], Any]] = None
+        self._lender: Any = None  # enterprise_connectors connector: connection() lends a client
+        self._owns_client = connection is None
+        if connection is None:
+            try:
+                import clickhouse_connect
+            except ImportError as exc:
+                raise MissingDependencyError("clickhouse", "clickhouse") from exc
+            options = {"autogenerate_session_id": False, **(client_options or {})}
+            self._factory = lambda: clickhouse_connect.get_client(
+                host=host, port=port, username=username, password=password, secure=secure, **options)
+        elif _is_client(connection):
+            self._client = connection
+        elif callable(getattr(connection, "connection", None)):
+            self._lender = connection
+        elif callable(connection):
+            self._factory = connection
+        elif callable(getattr(connection, "get", None)) and callable(getattr(connection, "names", None)):
+            raise ConfigurationError(
+                f"got a {type(connection).__name__}; pass one named connection from it, "
+                'e.g. connection=manager.get("logs_ch")'
+            )
+        else:
+            raise ConfigurationError(
+                f"don't know how to use a {type(connection).__name__} as a ClickHouse connection: pass a "
+                "clickhouse_connect client, a clickhouse_driver Client, a connector with a connection() "
+                "context manager (enterprise_connectors), or a zero-argument factory"
+            )
 
     @contextlib.contextmanager
-    def _use_client(self) -> Iterator[Any]:
+    def use(self) -> Iterator[Any]:
         """A client for one operation. A shared client is used one call at a time (a ClickHouse
         session runs one query at a time); a connector lends each caller its own pooled client."""
         if self._lender is not None:
@@ -250,6 +261,13 @@ class ClickHouseSink(BaseSink):
             return
         with self._lock:
             yield self._get_client()
+
+    def close(self) -> None:
+        if self._owns_client and self._client is not None:
+            try:
+                self._client.close()
+            except Exception:
+                pass
 
     def _get_client(self) -> Any:
         if self._client is None:
