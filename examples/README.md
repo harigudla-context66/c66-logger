@@ -24,6 +24,8 @@ Each file covers one use case and runs on its own. Together they write to
 | 16 | [16_chatbot_telemetry.py](16_chatbot_telemetry.py) | Every c66-chatbot logging call through `Telemetry`: a chat request, ingestion, feedback, eval, deletion, audit, `print` → logging | ClickHouse (embedded) or `postgres` arg |
 | 17 | [17_data_connection_layer.py](17_data_connection_layer.py) | Log through c66-data-connection-layer: pass `manager.get("logs_db")`; c66_logger borrows from its pool | Postgres + `enterprise_connectors` |
 | 18 | [18_data_connection_layer_clickhouse.py](18_data_connection_layer_clickhouse.py) | The same for ClickHouse: pass the library's ClickHouse connector, `manager.get("logs_ch")`; c66_logger borrows one client per write | `enterprise_connectors[clickhouse]`; ClickHouse (embedded if unset) |
+| 19 | [19_connections_yaml.py](19_connections_yaml.py) | The app's real setup: `.env` + [connections.yaml](connections.yaml) + `ConnectorManager.from_yaml(...)`; logs one run with every level to Postgres (`logs_db`) and ClickHouse (`logs_ch`) | `enterprise_connectors[postgres,clickhouse,yaml]` + `python-dotenv`; copy `.env.example` to `.env`; pass `postgres` or `clickhouse` for one target |
+| 20 | [20_telemetry_connections_yaml.py](20_telemetry_connections_yaml.py) | Case 16's chatbot `Telemetry` calls on the connections.yaml connectors, to Postgres and ClickHouse | as 19 |
 
 ## Setup
 
@@ -70,6 +72,8 @@ python 15_clickhouse_quickstart.py
 python 16_chatbot_telemetry.py            # or: python 16_chatbot_telemetry.py postgres
 python 17_data_connection_layer.py        # needs c66-data-connection-layer installed
 python 18_data_connection_layer_clickhouse.py   # same, ClickHouse
+python 19_connections_yaml.py             # connections.yaml + .env, Postgres and ClickHouse (cp .env.example .env first)
+python 20_telemetry_connections_yaml.py   # chatbot Telemetry, same connections
 bash run_17_on_docker.sh                  # 17 against the Postgres in your local Docker (sets everything up)
 ```
 

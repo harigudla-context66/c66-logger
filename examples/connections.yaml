@@ -1,0 +1,30 @@
+# Named connections for example 19, in the format c66-data-connection-layer
+# (enterprise_connectors) loads with ConnectorManager.from_yaml(...).
+# Values come from .env (copy .env.example). Secrets must be env:// references.
+
+connections:
+  logs_db:
+    type: postgres
+    config:
+      host: env://LOGS_PG_HOST
+      port: env://LOGS_PG_PORT
+      database: env://LOGS_PG_DATABASE
+      application_name: order_service-logs     # shows up in pg_stat_activity
+    credentials:
+      username: env://LOGS_PG_USER
+      password: env://LOGS_PG_PASSWORD
+    pool:
+      max_size: 5
+
+  logs_ch:
+    type: clickhouse
+    config:
+      host: env://LOGS_CH_HOST
+      port: env://LOGS_CH_PORT                 # 8123 = HTTP, 8443 = HTTPS / ClickHouse Cloud
+      secure: env://LOGS_CH_SECURE
+      client_name: order_service-logs          # shows up in system.query_log
+    credentials:
+      username: env://LOGS_CH_USER
+      password: env://LOGS_CH_PASSWORD
+    pool:
+      max_size: 4

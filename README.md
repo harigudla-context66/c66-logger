@@ -25,13 +25,15 @@ all have a same-signature replacement in `c66_logger.Telemetry`. See
 
 ## Documentation
 
+- [User guide](docs/USER_GUIDE.md) — every feature step by step, from installation to Telemetry, with code
+- [Demo guide](DEMO_GUIDE.md) — a scripted demo from database setup to the logged rows
 - [Implementation guide](docs/implementation-guide.md) — step-by-step setup with the `salesforce` tenant
 - [Architecture](docs/architecture.md) — design decisions, component map, column mapping, open items
 - [Data-flow diagram](docs/architecture-diagram.svg) ([interactive page](docs/architecture-diagram.html))
 - [c66-chatbot log mapping](docs/chatbot-log-mapping.md) — every current log call, where it goes now, dashboard queries
 - [Table DDL](docs/sql/logs_schema.sql) — Postgres `logs.log_entry` / `logs.log_run`; [ClickHouse DDL](docs/sql/clickhouse_logs_schema.sql)
 - [Using it in your project](#using-it-in-your-project-with-c66-data-connection-layer) — install, connections.yaml, startup/shutdown code, checks
-- [Examples](examples/README.md) — 18 runnable use cases
+- [Examples](examples/README.md) — 20 runnable use cases
 
 ## Quick start
 
